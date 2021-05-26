@@ -1,0 +1,3 @@
+[provider]
+cluster = "devnet"
+wallet = "/Users/sanchez/Projects/solana/ziquid/tutorial-0.json"
