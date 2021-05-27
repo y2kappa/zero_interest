@@ -15,19 +15,6 @@ const SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID = new PublicKey(
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
 );
 
-export async function troveDataPubkey(
-  userPubKey: PublicKey,
-  programId: PublicKey
-) {
-  let account = await PublicKey.createWithSeed(
-    userPubKey,
-    TROVE_DATA_SEED,
-    programId
-  );
-  console.log(`Trove Account ${account}`);
-  return account;
-}
-
 export async function findAssociatedTokenAddress(
   owner: PublicKey,
   tokenMintAddress: PublicKey
@@ -106,4 +93,15 @@ export async function createAssociatedTokenAccountIx(
     data: Buffer.from([]),
   });
   return [ix, associatedTokenAddress];
+}
+
+export async function troveDataPubkey(userPubKey: PublicKey, seed: string) {
+  // userPubKey is my SOLANA address
+  // This function will *always* return the same value
+  // This is essentially my metadata address
+
+  let account = await PublicKey.createWithSeed(userPubKey, seed, programId);
+
+  console.log(`Trove Account ${account}`);
+  return account;
 }
