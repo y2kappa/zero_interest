@@ -1,5 +1,7 @@
 PROGRAMID=UpbA7oUWbQiXyvbkrMtfMF2gZ3W7F6U3jqxXbUvyPrD
 
+.PHONY: build deploy build-client run listen deploy-new
+
 build:
 	anchor build
 
@@ -9,8 +11,11 @@ deploy:
 deploy-new:
 	anchor deploy -k tutorial-0.json -u https://api.devnet.solana.com/
 
+build-client:
+	npm run build
+
 run:
-	node client.js
+	npm run start
 
 listen:
 	solana logs $(PROGRAMID)
