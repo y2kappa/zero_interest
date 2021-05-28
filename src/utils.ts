@@ -1,7 +1,7 @@
 import * as anchor from '@project-serum/anchor';
 import {TokenInstructions} from '@project-serum/serum';
 import {AccountLayout, ASSOCIATED_TOKEN_PROGRAM_ID, Token, TOKEN_PROGRAM_ID,} from '@solana/spl-token';
-import {Account, Connection, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction,} from '@solana/web3.js';
+import {Connection, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction,} from '@solana/web3.js';
 
 const programPublicKey = 'UpbA7oUWbQiXyvbkrMtfMF2gZ3W7F6U3jqxXbUvyPrD';
 const programId = new anchor.web3.PublicKey(programPublicKey);

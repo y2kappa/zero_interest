@@ -152,6 +152,9 @@ async function initializeTrove() {
   });
 }
 async function depositTroveSol() {
+  const borrowUsd = 100;
+  const depositSol = 50;
+
   await program.rpc.depositTroveSol(
       new anchor.BN(1234), new anchor.BN(1234),
       {
