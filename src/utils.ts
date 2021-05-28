@@ -1,18 +1,31 @@
+import * as anchor from "@project-serum/anchor";
 import { TokenInstructions } from "@project-serum/serum";
 import {
+  AccountLayout,
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  Token,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
+  Account,
   Connection,
+  Keypair,
   PublicKey,
+  SystemProgram,
   SYSVAR_RENT_PUBKEY,
   TransactionInstruction,
 } from "@solana/web3.js";
 
-const TROVE_DATA_SEED = "trove_data_0";
+const programPublicKey = "UpbA7oUWbQiXyvbkrMtfMF2gZ3W7F6U3jqxXbUvyPrD";
+const programId = new anchor.web3.PublicKey(programPublicKey);
+
+export const TROVE_DATA_SEED = "trove_data_7";
 const SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID = new PublicKey(
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+);
+
+export const WRAPPED_SOL_MINT = new PublicKey(
+  "So11111111111111111111111111111111111111112"
 );
 
 export async function findAssociatedTokenAddress(
@@ -104,4 +117,24 @@ export async function troveDataPubkey(userPubKey: PublicKey, seed: string) {
 
   console.log(`Trove Account ${account}`);
   return account;
+}
+
+export async function createSolAccount(
+  connection: Connection,
+  payer: PublicKey
+): Promise<[TransactionInstruction, Keypair]> {
+  const solAccount = anchor.web3.Keypair.generate();
+  const space = 8 + 1;
+  const createSolTokenAccountIx = SystemProgram.createAccount({
+    programId: programId,
+    space: space,
+    lamports: await connection.getMinimumBalanceForRentExemption(
+      space,
+      "singleGossip"
+    ),
+    fromPubkey: payer,
+    newAccountPubkey: solAccount.publicKey,
+  });
+
+  return [createSolTokenAccountIx, solAccount];
 }

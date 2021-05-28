@@ -2,6 +2,7 @@
 // It is not expected users directly test with this example. For a more
 // ergonomic example, see `tests/basic-0.js` in this workspace.
 import * as anchor from "@project-serum/anchor";
+import { publicKeyLayout } from "@project-serum/serum/lib/layout";
 import {
   Connection,
   PublicKey,
@@ -98,11 +99,41 @@ async function initializeTrove() {
     associatedTokenAccount
   );
 
-  let seed = "trove_data_2";
-  const troveDataAccount = await utils.troveDataPubkey(owner, seed);
+  const troveDataAccount = await utils.troveDataPubkey(
+    owner,
+    utils.TROVE_DATA_SEED
+  );
   const troveDataAccountExists = await utils.checkIfAccountExists(
     provider.connection,
     associatedTokenAccount
+  );
+
+  const space = 8 + 145;
+  const authority = new anchor.web3.Account();
+
+  const ixCreateTroveDataAccount = SystemProgram.createAccountWithSeed({
+    fromPubkey: owner,
+    newAccountPubkey: troveDataAccount,
+    basePubkey: owner,
+    seed: utils.TROVE_DATA_SEED,
+    lamports: await provider.connection.getMinimumBalanceForRentExemption(
+      space,
+      "singleGossip"
+    ),
+    space: space,
+    programId: programId,
+  });
+
+  const [ixAssociatedStableCoin, addressAssociatedStableCoin] =
+    await utils.createAssociatedTokenAccountIx(
+      provider.wallet.publicKey,
+      provider.wallet.publicKey,
+      liquidityCurrencyMint
+    );
+
+  const [ixAssociatedSol, addresAssociatedSol] = await utils.createSolAccount(
+    provider.connection,
+    owner
   );
 
   console.log(`Associated Token Account ${associatedTokenAccount}`);
@@ -113,28 +144,17 @@ async function initializeTrove() {
   console.log(`owner ${owner}`);
   console.log(`troveDataAccount ${troveDataAccount}`);
   console.log(`associatedTokenAccount ${associatedTokenAccount}`);
+  console.log(`associatedSolAccount ${addresAssociatedSol.publicKey}`);
 
-  const space = 8 + 113;
-  const authority = new anchor.web3.Account();
-
-  const instruction = SystemProgram.createAccountWithSeed({
-    fromPubkey: owner,
-    newAccountPubkey: troveDataAccount,
-    basePubkey: owner,
-    seed: seed,
-    lamports: await provider.connection.getMinimumBalanceForRentExemption(
-      space,
-      "singleGossip"
-    ),
-    space: space,
-    programId: programId,
-  });
-
-  const [ix, address] = await utils.createAssociatedTokenAccountIx(
-    provider.wallet.publicKey,
-    provider.wallet.publicKey,
-    liquidityCurrencyMint
-  );
+  let ixCreateAssociatedStableCoinAccount = [];
+  if (
+    (await utils.checkIfAccountExists(
+      provider.connection,
+      associatedTokenAccount
+    )) == false
+  ) {
+    ixCreateAssociatedStableCoinAccount.push(ixAssociatedStableCoin);
+  }
 
   await program.rpc.initializeTrove({
     accounts: {
@@ -143,18 +163,47 @@ async function initializeTrove() {
       authority: authority.publicKey,
       lendingMarketAccount: lendingMarketPubkey,
       solSourceAccount: owner,
-      usdDestinationAssociatedAccount: address,
+      solEscrowAccount: addresAssociatedSol.publicKey,
+      stablecoinDestinationAssociatedAccount: addressAssociatedStableCoin,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
     },
-    signers: [authority],
-    instructions: [instruction, ix],
+    signers: [authority, addresAssociatedSol],
+    instructions: [
+      ixCreateTroveDataAccount,
+      ...ixCreateAssociatedStableCoinAccount,
+      ixAssociatedSol,
+    ],
   });
 }
 async function depositTroveSol() {
-  await program.rpc.depositTroveSol();
+  await program.rpc.depositTroveSol(new anchor.BN(1234), new anchor.BN(1234), {
+    // accounts: {
+    //   troveDataAccount: 12321,
+    // },
+    // instrctions: [
+    //   ...,
+    //   ...
+    // ],
+    // signers: []
+  });
+}
+
+async function getTroveData() {
+  // Fetch the newly created account from the cluster.
+  const owner = provider.wallet.publicKey;
+
+  const troveDataAccount = await utils.troveDataPubkey(
+    owner,
+    utils.TROVE_DATA_SEED
+  );
+
+  const account = await program.account.troveData(troveDataAccount);
+
+  console.log(`Trove Data Account ${JSON.stringify(account)}`);
 }
 
 console.log("Running client.");
 // initializeMarket().then(() => console.log('Success'));
-initializeTrove().then(() => console.log("Success"));
+// initializeTrove().then(() => console.log('Success'));
+getTroveData().then(() => console.log("Success"));
 // depositTroveSol().then(() => console.log('Success'));

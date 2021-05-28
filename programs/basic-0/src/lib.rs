@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, MintTo, TokenAccount, Transfer};
+pub use spl_token::ID;
 
 #[program]
 mod basic_0 {
@@ -7,9 +8,13 @@ mod basic_0 {
 
     use super::*;
     pub fn initialize_market(ctx: Context<InitializeMarket>, owner: Pubkey) -> ProgramResult {
+        // TODO:
+        // https://github.com/project-serum/anchor/commit/dd64779273ab441fb40e617e1dd120d5a5559307#diff-43fffbeff5b448207741b2bd0e9a4872347c17dcb5eb7cf655aedd1e519349a2R70
+        // Ensure you can set authority to the stablecoin account for the market so it can mint tokens
+
         msg!("Initializing market!");
         let lending_market_account = &mut ctx.accounts.lending_market_account;
-        let liquidity_currency_mint = &ctx.accounts.liquidity_currency_mint;
+        let stablecoin_mint = &ctx.accounts.stablecoin_mint;
         let token_program = &ctx.accounts.token_program;
 
         msg!(
@@ -18,8 +23,8 @@ mod basic_0 {
         );
         msg!(
             "Liquidity Currency Mint {:?} {:?}",
-            liquidity_currency_mint.to_account_info(),
-            liquidity_currency_mint.deref().deref()
+            stablecoin_mint.to_account_info(),
+            stablecoin_mint.deref().deref()
         );
         msg!("Token Program {:?}", token_program);
 
@@ -30,8 +35,7 @@ mod basic_0 {
         )
         .1;
         lending_market_account.token_program_id = *token_program.to_account_info().key;
-        lending_market_account.liquidity_token_mint =
-            *liquidity_currency_mint.to_account_info().key;
+        lending_market_account.liquidity_token_mint = *stablecoin_mint.to_account_info().key;
         lending_market_account.owner = owner;
 
         msg!(
@@ -41,12 +45,27 @@ mod basic_0 {
 
         Ok(())
     }
-    pub fn initialize_trove(_ctx: Context<InitializeTrove>) -> ProgramResult {
+    pub fn initialize_trove(ctx: Context<InitializeTrove>) -> ProgramResult {
+        // Initialize trove data with references (pubkeys) to all accounts
+        // from and into which tokens will be transferred
+
         msg!("Initializing trove.");
 
-        // let trove_account = &mut ctx.accounts.trove_data_account;
+        let trove_data_account = &mut ctx.accounts.trove_data_account;
+        let owner = &ctx.accounts.owner;
+        let stablecoin_account = &ctx.accounts.stablecoin_destination_associated_account;
+        let sol_escrow_account = &ctx.accounts.sol_escrow_account;
 
-        // msg!("Trove data Account {:?}", (trove_account.deref_mut()));
+        trove_data_account.version = 0;
+        trove_data_account.owner = *owner.to_account_info().key;
+        trove_data_account.sol_source_account = *owner.to_account_info().key;
+        trove_data_account.sol_escrow_account = *sol_escrow_account.to_account_info().key;
+        trove_data_account.stablecoin_destination_associated_account =
+            *stablecoin_account.to_account_info().key;
+        trove_data_account.deposited_sol = 0;
+        trove_data_account.borrowed_usd = 0;
+
+        msg!("Trove data Account {:?}", (trove_data_account.deref_mut()));
 
         Ok(())
     }
@@ -94,7 +113,7 @@ mod basic_0 {
 pub struct InitializeMarket<'info> {
     #[account(init, rent_exempt)]
     pub lending_market_account: ProgramAccount<'info, LendingMarketAccount>,
-    pub liquidity_currency_mint: CpiAccount<'info, Mint>,
+    pub stablecoin_mint: CpiAccount<'info, Mint>,
     pub rent: Sysvar<'info, Rent>,
     pub token_program: AccountInfo<'info>,
 }
@@ -116,33 +135,72 @@ pub struct LendingMarketAccount {
 pub struct InitializeTrove<'info> {
     #[account(init, rent_exempt)]
     pub trove_data_account: ProgramAccount<'info, TroveData>,
+
     #[account(signer)]
     pub owner: AccountInfo<'info>,
+
+    // TODO: Still don't know how to use this correctly
     #[account(signer)]
     pub authority: AccountInfo<'info>,
+
+    // Global data account with info such as baseRate, MCR, etc
     pub lending_market_account: ProgramAccount<'info, LendingMarketAccount>,
+
+    // Source of the deposit of SOL, an where SOL will be returned
+    // after the debt is paid back
     pub sol_source_account: AccountInfo<'info>,
-    pub usd_destination_associated_account: AccountInfo<'info>,
+
+    // New account where the sol will be temporarily locked while the
+    // trove is active and has debt
+    #[account(init, rent_exempt)]
+    pub sol_escrow_account: ProgramAccount<'info, TroveCollateralAccount>,
+
+    // Account where stablecoin will be "lent to" or "minted to"
+    pub stablecoin_destination_associated_account: AccountInfo<'info>,
+
     pub rent: Sysvar<'info, Rent>,
 }
 
+// 1 + 32 + 32 + 32 + 32 + 8 + 8 = 145
 #[account]
 #[derive(Debug)]
 pub struct TroveData {
     pub version: u8,
+
+    // Main user, signer
     pub owner: Pubkey,
-    pub deposited_trove_sol: Pubkey,
-    pub associated_liqudity_token_account: Pubkey,
+
+    // Where the SOL is coming from (Borrower)
+    pub sol_source_account: Pubkey,
+
+    // Escrow account where the SOL is deposited (locked)
+    // and owned by the program which only the program can
+    // release after the debt was paid back or redeemed or
+    // in case of a liquidation
+    pub sol_escrow_account: Pubkey,
+
+    // User owned account, where the stablecoin will be minted
+    // when the user borrows some agains their SOL collateral
+    pub stablecoin_destination_associated_account: Pubkey,
+
+    // TODO: make this u128 and implement the decimal logic
     pub deposited_sol: u64,
+    // TODO: make this u128 and implement the decimal logic
     pub borrowed_usd: u64,
+}
+
+#[account]
+#[derive(Debug)]
+pub struct TroveCollateralAccount {
+    data: u8,
 }
 
 /// Deposit collateral to your trove to be able to borrow
 #[derive(Accounts)]
-pub struct DepositTroveSOL<'info> {
+pub struct DepositTroveSOL {
     // TODO: add authority with signature
-    #[account(mut)]
-    pub trove_data_account: ProgramAccount<'info, TroveData>,
+// #[account(mut)]
+// pub trove_data_account: ProgramAccount<'info, TroveData>,
 }
 
 #[derive(Accounts)]
@@ -175,3 +233,107 @@ pub struct StakeZRX {}
 /// zUSD fully backed by SOL
 #[derive(Accounts)]
 pub struct LiquidateTrove {}
+
+// Temporary while
+// https://github.com/project-serum/anchor/commit/dd64779273ab441fb40e617e1dd120d5a5559307#diff-43fffbeff5b448207741b2bd0e9a4872347c17dcb5eb7cf655aedd1e519349a2R70
+// is published (or pulled)
+
+#[derive(Accounts)]
+pub struct SetAuthority<'info> {
+    pub current_authority: AccountInfo<'info>,
+    pub account_or_mint: AccountInfo<'info>,
+}
+
+mod utils {
+    use super::*;
+    // pub fn set_authority_for_token_account_a<'a, 'b, 'c, 'info>(
+    //     account_to_be_transferred: AccountInfo,
+    //     current_owner: AccountInfo<'info>,
+    //     token_program: AccountInfo<'info>,
+    //     authority_type: spl_token::instruction::AuthorityType,
+    //     new_authority: Option<Pubkey>,
+    // ) -> ProgramResult {
+    //     let mut spl_new_authority: Option<&Pubkey> = None;
+    //     if new_authority.is_some() {
+    //         spl_new_authority = new_authority.as_ref()
+    //     }
+
+    //     let ix = spl_token::instruction::set_authority(
+    //         &spl_token::ID,
+    //         &account_to_be_transferred.key.clone(),
+    //         spl_new_authority.clone(),
+    //         authority_type,
+    //         current_owner.key,
+    //         &[], // TODO: Support multisig signers.
+    //     )?;
+    //     anchor_lang::solana_program::program::invoke_signed(
+    //         &ix,
+    //         &[
+    //             account_to_be_transferred.clone(),
+    //             current_owner.clone(),
+    //             token_program.clone(),
+    //         ],
+    //         &[], // ctx.signer_seeds,
+    //     )
+
+    //     // invoke(
+    //     //     &owner_change_ix,
+    //     //     &[
+    //     //         temp_token_account.clone(),
+    //     //         initializer.clone(),
+    //     //         token_program.clone(),
+    //     //     ],
+    //     // )?;
+    // }
+
+    pub fn set_authority<'a, 'b, 'c, 'info>(
+        ctx: CpiContext<'a, 'b, 'c, 'info, SetAuthority<'info>>,
+        authority_type: spl_token::instruction::AuthorityType,
+        new_authority: Option<Pubkey>,
+    ) -> ProgramResult {
+        // How you would call it..
+        // // creating temporary program address
+        // // from current owner to this program
+        // let (pda, _bump_seed) = Pubkey::find_program_address(
+        //     &[b"trove_sol_escrow", &owner.to_account_info().key.to_bytes()],
+        //     ctx.program_id,
+        // );
+
+        // // cross program invocation (to set ownership)
+        // let cpi_program = ctx.accounts.stablecoin_token_program.clone();
+        // let cpi_accounts = SetAuthority {
+        //     current_authority: owner.clone(),
+        //     account_or_mint: sol_escrow_account.to_account_info().clone(),
+        // };
+
+        // let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        // utils::set_authority(
+        //     cpi_ctx,
+        //     spl_token::instruction::AuthorityType::AccountOwner,
+        //     Some(pda),
+        // )?;
+
+        let mut spl_new_authority: Option<&Pubkey> = None;
+        if new_authority.is_some() {
+            spl_new_authority = new_authority.as_ref()
+        }
+
+        let ix = spl_token::instruction::set_authority(
+            &spl_token::ID,
+            ctx.accounts.account_or_mint.key,
+            spl_new_authority,
+            authority_type,
+            ctx.accounts.current_authority.key,
+            &[], // TODO: Support multisig signers.
+        )?;
+        anchor_lang::solana_program::program::invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.account_or_mint.clone(),
+                ctx.accounts.current_authority.clone(),
+                ctx.program.clone(),
+            ],
+            ctx.signer_seeds,
+        )
+    }
+}
