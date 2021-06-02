@@ -78,7 +78,6 @@ mod basic_0 {
         let trove_data_account = &mut ctx.accounts.trove_data_account;
         let owner_account = &ctx.accounts.owner;
         let sol_escrow_account = &ctx.accounts.sol_escrow_account;
-        let sol_program_account = &ctx.accounts.sol_program_account;
         let sol_in_account = lamports_to_sol(owner_account.to_account_info().lamports());
         msg!(
             "Depositing SOL {} to trove in exchange of {} stablecoin",
@@ -242,7 +241,7 @@ pub struct TroveBorrow<'info> {
     pub owner: AccountInfo<'info>,
 
     pub sol_escrow_account: AccountInfo<'info>,
-    pub sol_program_account: AccountInfo<'info>,
+    pub token_program: AccountInfo<'info>,
 }
 
 // #[derive(Accounts)]
