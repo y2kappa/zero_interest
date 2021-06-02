@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::native_token::lamports_to_sol;
 use anchor_spl::token::{self, Burn, Mint, MintTo, TokenAccount, Transfer};
 pub use spl_token::ID;
 
@@ -45,7 +46,7 @@ mod basic_0 {
 
         Ok(())
     }
-    pub fn initialize_trove(ctx: Context<InitializeTrove>) -> ProgramResult {
+    pub fn trove_initialize(ctx: Context<TroveInitialize>) -> ProgramResult {
         // Initialize trove data with references (pubkeys) to all accounts
         // from and into which tokens will be transferred
 
@@ -69,42 +70,74 @@ mod basic_0 {
 
         Ok(())
     }
-    pub fn deposit_trove_sol(
-        _ctx: Context<DepositTroveSOL>,
-        sol_amount: u64,
-        usd_amount: u64,
+    pub fn trove_borrow(
+        ctx: Context<TroveBorrow>,
+        deposit_sol_amount: u64,
+        borrow_stable_amount: u64,
     ) -> ProgramResult {
+        let trove_data_account = &mut ctx.accounts.trove_data_account;
+        let owner_account = &ctx.accounts.owner;
+        let sol_escrow_account = &ctx.accounts.sol_escrow_account;
+        let sol_program_account = &ctx.accounts.sol_program_account;
+        let sol_in_account = lamports_to_sol(owner_account.to_account_info().lamports());
         msg!(
-            "Depositing SOL {} to trove in exchange of {}",
-            sol_amount,
-            usd_amount
+            "Depositing SOL {} to trove in exchange of {} stablecoin",
+            deposit_sol_amount,
+            borrow_stable_amount
         );
+
+        msg!("Trove Data Account {:?}", (trove_data_account.deref_mut()));
+        msg!(
+            "Owner has {} SOL in Account {:?} ",
+            sol_in_account,
+            (owner_account.to_account_info())
+        );
+
+        // TODO: ensure sol_escrow_account == trove_data_account.sol_escrow_account
+
+        // 1. Transfer from owner to escrow
+        // 2. Mint from Stablecoin Mint to Associated Stable account
+
+        // 1.
+        let cpi_accounts = Transfer {
+            from: owner_account.to_account_info().clone(),
+            to: sol_escrow_account.clone(),
+            authority: owner_account.to_account_info().clone(),
+        };
+
+        let amount = 2;
+        let cpi_program = ctx.accounts.token_program.clone();
+
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        let res = token::transfer(cpi_ctx, amount);
+        msg!("Result {:?}", res);
+
         Ok(())
     }
-    pub fn borrow_trove_usd(_ctx: Context<BorrowTroveUSD>) -> ProgramResult {
-        msg!("Borrowing usd from trove!");
-        Ok(())
-    }
-    pub fn repay_trove_usd(_ctx: Context<RepayTroveUSD>) -> ProgramResult {
-        msg!("Repaying trove with usd!");
-        Ok(())
-    }
-    pub fn redeem_sol_trove_usd(_ctx: Context<RedeemSOLTroveUSD>) -> ProgramResult {
-        msg!("Redeeming sol for usd!");
-        Ok(())
-    }
-    pub fn stake_usd(_ctx: Context<StakeUSD>) -> ProgramResult {
-        msg!("Staking USD for the liquidity/stability pool.");
-        Ok(())
-    }
-    pub fn stake_zrx(_ctx: Context<StakeZRX>) -> ProgramResult {
-        msg!("Staking ZRX!");
-        Ok(())
-    }
-    pub fn liquidate_trove(_ctx: Context<LiquidateTrove>) -> ProgramResult {
-        msg!("Liquidating trove!");
-        Ok(())
-    }
+    // pub fn borrow_trove_usd(_ctx: Context<BorrowTroveUSD>) -> ProgramResult {
+    //     msg!("Borrowing usd from trove!");
+    //     Ok(())
+    // }
+    // pub fn repay_trove_usd(_ctx: Context<RepayTroveUSD>) -> ProgramResult {
+    //     msg!("Repaying trove with usd!");
+    //     Ok(())
+    // }
+    // pub fn redeem_sol_trove_usd(_ctx: Context<RedeemSOLTroveUSD>) -> ProgramResult {
+    //     msg!("Redeeming sol for usd!");
+    //     Ok(())
+    // }
+    // pub fn stake_usd(_ctx: Context<StakeUSD>) -> ProgramResult {
+    //     msg!("Staking USD for the liquidity/stability pool.");
+    //     Ok(())
+    // }
+    // pub fn stake_zrx(_ctx: Context<StakeZRX>) -> ProgramResult {
+    //     msg!("Staking ZRX!");
+    //     Ok(())
+    // }
+    // pub fn liquidate_trove(_ctx: Context<LiquidateTrove>) -> ProgramResult {
+    //     msg!("Liquidating trove!");
+    //     Ok(())
+    // }
 }
 
 /// initialize Stability Pool
@@ -132,7 +165,7 @@ pub struct LendingMarketAccount {
 
 /// Initializes a new trove, assigning it an owner
 #[derive(Accounts)]
-pub struct InitializeTrove<'info> {
+pub struct TroveInitialize<'info> {
     #[account(init, rent_exempt)]
     pub trove_data_account: ProgramAccount<'info, TroveData>,
 
@@ -197,143 +230,113 @@ pub struct TroveCollateralAccount {
 
 /// Deposit collateral to your trove to be able to borrow
 #[derive(Accounts)]
-pub struct DepositTroveSOL {
+pub struct TroveBorrow<'info> {
     // TODO: add authority with signature
-// #[account(mut)]
-// pub trove_data_account: ProgramAccount<'info, TroveData>,
+    #[account(mut)]
+    pub trove_data_account: ProgramAccount<'info, TroveData>,
+
+    #[account(mut, has_one = owner)]
+    from: CpiAccount<'info, TokenAccount>,
+
+    #[account(signer)]
+    pub owner: AccountInfo<'info>,
+
+    pub sol_escrow_account: AccountInfo<'info>,
+    pub sol_program_account: AccountInfo<'info>,
 }
 
-#[derive(Accounts)]
-/// Borrow USD from your trove based on your SOL collateral
-pub struct BorrowTroveUSD {}
+// #[derive(Accounts)]
+// /// Borrow USD from your trove based on your SOL collateral
+// pub struct BorrowTroveUSD {}
 
-/// Paying back your debt to be able to get back your SOL
-#[derive(Accounts)]
-pub struct RepayTroveUSD {}
+// /// Paying back your debt to be able to get back your SOL
+// #[derive(Accounts)]
+// pub struct RepayTroveUSD {}
 
-/// For any amount of zUSD you can redeem USD worth of SOL
-/// This is a mechanism to keep zUSD pegged to real USD
-#[derive(Accounts)]
-pub struct RedeemSOLTroveUSD {}
+// /// For any amount of zUSD you can redeem USD worth of SOL
+// /// This is a mechanism to keep zUSD pegged to real USD
+// #[derive(Accounts)]
+// pub struct RedeemSOLTroveUSD {}
 
-/// Staking USD for the stability pool to earn ZRX and SOL rewards
-/// from fees and liquidations.
-/// Essentially providing liquidity
-#[derive(Accounts)]
-pub struct StakeUSD {}
+// /// Staking USD for the stability pool to earn ZRX and SOL rewards
+// /// from fees and liquidations.
+// /// Essentially providing liquidity
+// #[derive(Accounts)]
+// pub struct StakeUSD {}
 
-/// Staking ZRX to earn rewards from the borrowing and redemption fees
-/// This is like buying shares into the system
-#[derive(Accounts)]
-pub struct StakeZRX {}
+// /// Staking ZRX to earn rewards from the borrowing and redemption fees
+// /// This is like buying shares into the system
+// #[derive(Accounts)]
+// pub struct StakeZRX {}
 
-/// If a trove is under Minimum Collateral Ratio, it is liquidatable
-/// by anyone. The liquidator will receive fees + some bonus back
-/// This is an incentive to keep the system collateralized and the
-/// zUSD fully backed by SOL
-#[derive(Accounts)]
-pub struct LiquidateTrove {}
+// /// If a trove is under Minimum Collateral Ratio, it is liquidatable
+// /// by anyone. The liquidator will receive fees + some bonus back
+// /// This is an incentive to keep the system collateralized and the
+// /// zUSD fully backed by SOL
+// #[derive(Accounts)]
+// pub struct LiquidateTrove {}
 
-// Temporary while
-// https://github.com/project-serum/anchor/commit/dd64779273ab441fb40e617e1dd120d5a5559307#diff-43fffbeff5b448207741b2bd0e9a4872347c17dcb5eb7cf655aedd1e519349a2R70
-// is published (or pulled)
+// // Temporary while
+// // https://github.com/project-serum/anchor/commit/dd64779273ab441fb40e617e1dd120d5a5559307#diff-43fffbeff5b448207741b2bd0e9a4872347c17dcb5eb7cf655aedd1e519349a2R70
+// // is published (or pulled)
 
-#[derive(Accounts)]
-pub struct SetAuthority<'info> {
-    pub current_authority: AccountInfo<'info>,
-    pub account_or_mint: AccountInfo<'info>,
-}
+// #[derive(Accounts)]
+// pub struct SetAuthority<'info> {
+//     pub current_authority: AccountInfo<'info>,
+//     pub account_or_mint: AccountInfo<'info>,
+// }
 
-mod utils {
-    use super::*;
-    // pub fn set_authority_for_token_account_a<'a, 'b, 'c, 'info>(
-    //     account_to_be_transferred: AccountInfo,
-    //     current_owner: AccountInfo<'info>,
-    //     token_program: AccountInfo<'info>,
-    //     authority_type: spl_token::instruction::AuthorityType,
-    //     new_authority: Option<Pubkey>,
-    // ) -> ProgramResult {
-    //     let mut spl_new_authority: Option<&Pubkey> = None;
-    //     if new_authority.is_some() {
-    //         spl_new_authority = new_authority.as_ref()
-    //     }
+// mod utils {
+//     use super::*;
 
-    //     let ix = spl_token::instruction::set_authority(
-    //         &spl_token::ID,
-    //         &account_to_be_transferred.key.clone(),
-    //         spl_new_authority.clone(),
-    //         authority_type,
-    //         current_owner.key,
-    //         &[], // TODO: Support multisig signers.
-    //     )?;
-    //     anchor_lang::solana_program::program::invoke_signed(
-    //         &ix,
-    //         &[
-    //             account_to_be_transferred.clone(),
-    //             current_owner.clone(),
-    //             token_program.clone(),
-    //         ],
-    //         &[], // ctx.signer_seeds,
-    //     )
+//     pub fn set_authority<'a, 'b, 'c, 'info>(
+//         ctx: CpiContext<'a, 'b, 'c, 'info, SetAuthority<'info>>,
+//         authority_type: spl_token::instruction::AuthorityType,
+//         new_authority: Option<Pubkey>,
+//     ) -> ProgramResult {
+//         // How you would call it..
+//         // // creating temporary program address
+//         // // from current owner to this program
+//         // let (pda, _bump_seed) = Pubkey::find_program_address(
+//         //     &[b"trove_sol_escrow", &owner.to_account_info().key.to_bytes()],
+//         //     ctx.program_id,
+//         // );
 
-    //     // invoke(
-    //     //     &owner_change_ix,
-    //     //     &[
-    //     //         temp_token_account.clone(),
-    //     //         initializer.clone(),
-    //     //         token_program.clone(),
-    //     //     ],
-    //     // )?;
-    // }
+//         // // cross program invocation (to set ownership)
+//         // let cpi_program = ctx.accounts.stablecoin_token_program.clone();
+//         // let cpi_accounts = SetAuthority {
+//         //     current_authority: owner.clone(),
+//         //     account_or_mint: sol_escrow_account.to_account_info().clone(),
+//         // };
 
-    pub fn set_authority<'a, 'b, 'c, 'info>(
-        ctx: CpiContext<'a, 'b, 'c, 'info, SetAuthority<'info>>,
-        authority_type: spl_token::instruction::AuthorityType,
-        new_authority: Option<Pubkey>,
-    ) -> ProgramResult {
-        // How you would call it..
-        // // creating temporary program address
-        // // from current owner to this program
-        // let (pda, _bump_seed) = Pubkey::find_program_address(
-        //     &[b"trove_sol_escrow", &owner.to_account_info().key.to_bytes()],
-        //     ctx.program_id,
-        // );
+//         // let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+//         // utils::set_authority(
+//         //     cpi_ctx,
+//         //     spl_token::instruction::AuthorityType::AccountOwner,
+//         //     Some(pda),
+//         // )?;
 
-        // // cross program invocation (to set ownership)
-        // let cpi_program = ctx.accounts.stablecoin_token_program.clone();
-        // let cpi_accounts = SetAuthority {
-        //     current_authority: owner.clone(),
-        //     account_or_mint: sol_escrow_account.to_account_info().clone(),
-        // };
+//         let mut spl_new_authority: Option<&Pubkey> = None;
+//         if new_authority.is_some() {
+//             spl_new_authority = new_authority.as_ref()
+//         }
 
-        // let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-        // utils::set_authority(
-        //     cpi_ctx,
-        //     spl_token::instruction::AuthorityType::AccountOwner,
-        //     Some(pda),
-        // )?;
-
-        let mut spl_new_authority: Option<&Pubkey> = None;
-        if new_authority.is_some() {
-            spl_new_authority = new_authority.as_ref()
-        }
-
-        let ix = spl_token::instruction::set_authority(
-            &spl_token::ID,
-            ctx.accounts.account_or_mint.key,
-            spl_new_authority,
-            authority_type,
-            ctx.accounts.current_authority.key,
-            &[], // TODO: Support multisig signers.
-        )?;
-        anchor_lang::solana_program::program::invoke_signed(
-            &ix,
-            &[
-                ctx.accounts.account_or_mint.clone(),
-                ctx.accounts.current_authority.clone(),
-                ctx.program.clone(),
-            ],
-            ctx.signer_seeds,
-        )
-    }
-}
+//         let ix = spl_token::instruction::set_authority(
+//             &spl_token::ID,
+//             ctx.accounts.account_or_mint.key,
+//             spl_new_authority,
+//             authority_type,
+//             ctx.accounts.current_authority.key,
+//             &[], // TODO: Support multisig signers.
+//         )?;
+//         anchor_lang::solana_program::program::invoke_signed(
+//             &ix,
+//             &[
+//                 ctx.accounts.account_or_mint.clone(),
+//                 ctx.accounts.current_authority.clone(),
+//                 ctx.program.clone(),
+//             ],
+//             ctx.signer_seeds,
+//         )
+//     }
+// }

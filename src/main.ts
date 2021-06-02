@@ -132,7 +132,7 @@ async function initializeTrove() {
     ixCreateAssociatedStableCoinAccount.push(ixAssociatedStableCoin);
   }
 
-  await program.rpc.initializeTrove({
+  await program.rpc.troveInitialize({
     accounts: {
       troveDataAccount: troveDataAccount,
       owner: owner,
@@ -151,31 +151,24 @@ async function initializeTrove() {
     ],
   });
 }
-async function depositTroveSol() {
-  const borrowUsd = 100;
-  const depositSol = 50;
+async function troveBorrow() {
+  const owner = provider.wallet;
+  const troveDataAccount =
+      await utils.troveDataPubkey(owner.publicKey, utils.TROVE_DATA_SEED);
 
-  await program.rpc.depositTroveSol(
-      new anchor.BN(1234), new anchor.BN(1234),
-      {
-          // accounts: {
-          //   troveDataAccount: 12321,
-          // },
-          // instrctions: [
-          //   ...,
-          //   ...
-          // ],
-          // signers: []
+  const depositSol = 50;
+  const borrowUsd = 100;
+
+  await program.rpc.troveBorrow(
+      new anchor.BN(depositSol), new anchor.BN(borrowUsd), {
+        accounts: {troveDataAccount: troveDataAccount, owner: owner.publicKey},
       });
 }
 
 async function getTroveData() {
-  // Fetch the newly created account from the cluster.
   const owner = provider.wallet.publicKey;
-
   const troveDataAccount =
       await utils.troveDataPubkey(owner, utils.TROVE_DATA_SEED);
-
   const account = await program.account.troveData(troveDataAccount);
 
   console.log(`Trove Data Account ${JSON.stringify(account)}`);
@@ -184,5 +177,5 @@ async function getTroveData() {
 console.log('Running client.');
 // initializeMarket().then(() => console.log('Success'));
 // initializeTrove().then(() => console.log('Success'));
-getTroveData().then(() => console.log('Success'));
-// depositTroveSol().then(() => console.log('Success'));
+// getTroveData().then(() => console.log('Success'));
+troveBorrow().then(() => console.log('Success'));
