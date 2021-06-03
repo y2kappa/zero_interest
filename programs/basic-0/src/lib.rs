@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::native_token::lamports_to_sol;
+use anchor_lang::solana_program::system_program;
 use anchor_spl::token::{self, Burn, Mint, MintTo, TokenAccount, Transfer};
 pub use spl_token::ID;
 
@@ -70,45 +71,95 @@ mod basic_0 {
 
         Ok(())
     }
+    pub fn trove_transfer(
+        ctx: Context<TroveTransfer>,
+        deposit_sol_amount: u64,
+        borrow_stable_amount: u64,
+    ) -> ProgramResult {
+        let owner = &mut ctx.accounts.owner;
+        let to = &mut ctx.accounts.to;
+
+        // **owner.to_account_info().lamports.borrow_mut() -= 2;
+        // **to.to_account_info().lamports.borrow_mut() += 2;
+
+        // let cpi_accounts = Transfer {
+        //     from: owner.to_account_info().clone(),
+        //     to: to.clone(),
+        //     authority: owner.to_account_info().clone(),
+        // };
+
+        // let amount = 2;
+
+        let ix = anchor_lang::solana_program::system_instruction::transfer(
+            &owner.to_account_info().key,
+            &to.to_account_info().key,
+            20,
+        );
+
+        let res = anchor_lang::solana_program::program::invoke(
+            &ix,
+            &[
+                owner.to_account_info().clone(),
+                to.to_account_info().clone(),
+            ],
+        )?;
+
+        // let cpi_ctx = CpiContext::new(system_program::id(), cpi_accounts);
+        // let res = token::transfer(cpi_ctx, amount);
+        msg!("Result {:?}", res);
+
+        Ok(())
+    }
+
     pub fn trove_borrow(
         ctx: Context<TroveBorrow>,
         deposit_sol_amount: u64,
         borrow_stable_amount: u64,
     ) -> ProgramResult {
-        let trove_data_account = &mut ctx.accounts.trove_data_account;
-        let owner_account = &ctx.accounts.owner;
-        let sol_escrow_account = &ctx.accounts.sol_escrow_account;
-        let sol_in_account = lamports_to_sol(owner_account.to_account_info().lamports());
-        msg!(
-            "Depositing SOL {} to trove in exchange of {} stablecoin",
-            deposit_sol_amount,
-            borrow_stable_amount
-        );
+        // let trove_data_account = &mut ctx.accounts.trove_data_account;
+        // let owner_account = &ctx.accounts.owner;
+        // let sol_escrow_account = &ctx.accounts.sol_escrow_account;
+        // let sol_in_account = lamports_to_sol(owner_account.to_account_info().lamports());
+        // msg!(
+        //     "Depositing SOL {} to trove in exchange of {} stablecoin",
+        //     deposit_sol_amount,
+        //     borrow_stable_amount
+        // );
 
-        msg!("Trove Data Account {:?}", (trove_data_account.deref_mut()));
-        msg!(
-            "Owner has {} SOL in Account {:?} ",
-            sol_in_account,
-            (owner_account.to_account_info())
-        );
+        // msg!("Trove Data Account {:?}", (trove_data_account.deref_mut()));
+        // msg!(
+        //     "Owner has {} SOL in Account {:?} ",
+        //     sol_in_account,
+        //     (owner_account.to_account_info())
+        // );
 
         // TODO: ensure sol_escrow_account == trove_data_account.sol_escrow_account
 
         // 1. Transfer from owner to escrow
         // 2. Mint from Stablecoin Mint to Associated Stable account
 
-        // 1.
+        // Transfer funds to the check.
         let cpi_accounts = Transfer {
-            from: owner_account.to_account_info().clone(),
-            to: sol_escrow_account.clone(),
-            authority: owner_account.to_account_info().clone(),
+            from: ctx.accounts.from.to_account_info().clone(),
+            to: ctx.accounts.vault.to_account_info().clone(),
+            authority: ctx.accounts.owner.clone(),
         };
-
-        let amount = 2;
         let cpi_program = ctx.accounts.token_program.clone();
-
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-        let res = token::transfer(cpi_ctx, amount);
+        let res = token::transfer(cpi_ctx, 2)?;
+
+        // // 1.
+        // let cpi_accounts = Transfer {
+        //     from: owner_account.to_account_info().clone(),
+        //     to: sol_escrow_account.clone(),
+        //     authority: owner_account.to_account_info().clone(),
+        // };
+
+        // let amount = 2;
+        // let cpi_program = ctx.accounts.token_program.clone();
+
+        // let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        // let res = token::transfer(cpi_ctx, amount);
         msg!("Result {:?}", res);
 
         Ok(())
@@ -234,14 +285,29 @@ pub struct TroveBorrow<'info> {
     #[account(mut)]
     pub trove_data_account: ProgramAccount<'info, TroveData>,
 
-    #[account(mut, has_one = owner)]
-    from: CpiAccount<'info, TokenAccount>,
+    // Owner of the `from` token account.
+    owner: AccountInfo<'info>,
 
-    #[account(signer)]
+    #[account(mut, has_one = owner)]
+    pub from: CpiAccount<'info, TokenAccount>,
+
+    // #[account(mut, "&vault.owner == check_signer.key")]
+    vault: CpiAccount<'info, TokenAccount>,
+
+    pub token_program: AccountInfo<'info>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct TroveTransfer<'info> {
+    #[account(mut)]
+    pub trove_data_account: ProgramAccount<'info, TroveData>,
+
+    #[account(mut)]
     pub owner: AccountInfo<'info>,
 
-    pub sol_escrow_account: AccountInfo<'info>,
-    pub token_program: AccountInfo<'info>,
+    #[account(mut)]
+    pub to: AccountInfo<'info>,
 }
 
 // #[derive(Accounts)]

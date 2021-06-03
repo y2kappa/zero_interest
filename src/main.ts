@@ -165,6 +165,24 @@ async function troveBorrow() {
       });
 }
 
+async function troveTransfer() {
+  const owner = provider.wallet;
+  const troveDataAccount =
+      await utils.troveDataPubkey(owner.publicKey, utils.TROVE_DATA_SEED);
+
+  const depositSol = 50;
+  const borrowUsd = 100;
+
+  await program.rpc.troveTransfer(
+      new anchor.BN(depositSol), new anchor.BN(borrowUsd), {
+        accounts: {
+          troveDataAccount: troveDataAccount,
+          owner: owner.publicKey,
+          to: new PublicKey('5BstkosSPVx3Yz9fyG2LSvSdXXaQQfaH313iaHth8vd1')
+        },
+      });
+}
+
 async function getTroveData() {
   const owner = provider.wallet.publicKey;
   const troveDataAccount =
@@ -172,10 +190,13 @@ async function getTroveData() {
   const account = await program.account.troveData(troveDataAccount);
 
   console.log(`Trove Data Account ${JSON.stringify(account)}`);
+  console.log(`Trove Data Account ${
+      JSON.stringify(account.solEscrowAccount.toString())}`);
 }
 
 console.log('Running client.');
 // initializeMarket().then(() => console.log('Success'));
 // initializeTrove().then(() => console.log('Success'));
 // getTroveData().then(() => console.log('Success'));
-troveBorrow().then(() => console.log('Success'));
+// troveBorrow().then(() => console.log('Success'));
+troveTransfer().then(() => console.log('Success'));
