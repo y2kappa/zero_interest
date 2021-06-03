@@ -101,6 +101,7 @@ mod basic_0 {
             &[
                 owner.to_account_info().clone(),
                 to.to_account_info().clone(),
+                ctx.accounts.system_program.clone(),
             ],
         )?;
 
@@ -308,6 +309,8 @@ pub struct TroveTransfer<'info> {
 
     #[account(mut)]
     pub to: AccountInfo<'info>,
+
+    pub system_program: AccountInfo<'info>,
 }
 
 // #[derive(Accounts)]

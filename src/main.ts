@@ -173,12 +173,15 @@ async function troveTransfer() {
   const depositSol = 50;
   const borrowUsd = 100;
 
+  const systemProgramId = new PublicKey('11111111111111111111111111111111');
+
   await program.rpc.troveTransfer(
       new anchor.BN(depositSol), new anchor.BN(borrowUsd), {
         accounts: {
           troveDataAccount: troveDataAccount,
           owner: owner.publicKey,
-          to: new PublicKey('5BstkosSPVx3Yz9fyG2LSvSdXXaQQfaH313iaHth8vd1')
+          to: new PublicKey('5BstkosSPVx3Yz9fyG2LSvSdXXaQQfaH313iaHth8vd1'),
+          systemProgram: systemProgramId
         },
       });
 }
